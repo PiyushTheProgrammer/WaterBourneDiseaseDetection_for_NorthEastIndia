@@ -1,0 +1,1317 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Smart Community Health Monitoring & Early Warning System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chosen Palette: Soothing Aquifer -->
+    <!-- Application Structure Plan: The application is designed as a top-down narrative dashboard. It starts with the high-level problem, presents the solution visually, allows a deep-dive into the technical components via an an interactive tabbed section, shows the implementation plan, and finally addresses challenges. New sections powered by Gemini were added to provide dynamic, on-demand health insights and a protocol generator, transforming the app from a static report to a live, interactive tool for community health workers. Navigation is facilitated by a sticky header. -->
+    <!-- Visualization & Content Choices: 
+        - Report Info: Prevalence of water-borne diseases. -> Goal: Compare/Inform -> Viz: Bar Chart -> Interaction: Hover tooltips -> Justification: A bar chart provides an immediate visual comparison of disease impact, which is more powerful than a text list. -> Library: Chart.js/Canvas.
+        - Report Info: The three core system components (Collect, Analyze, Alert). -> Goal: Organize -> Viz: Interactive Flow Diagram -> Interaction: Clicking a component activates the corresponding tab in the "How It Works" section. -> Justification: Visually simplifies the system's architecture, making the complex process intuitive and serving as a navigational tool. -> Library/Method: HTML/CSS/JS.
+        - Report Info: Detailed descriptions of each system layer. -> Goal: Organize/Inform -> Viz: Tabbed Interface -> Interaction: Clicking tabs reveals detailed content. -> Justification: Breaks down dense technical information into manageable sections, preventing user overload and improving readability. -> Library/Method: HTML/CSS/JS.
+        - Report Info: Phased implementation plan. -> Goal: Show Change -> Viz: Interactive Timeline -> Interaction: Clicking a phase highlights it and displays its details. -> Justification: A timeline is the most logical and universally understood way to present a phased rollout strategy. -> Library/Method: HTML/CSS/JS.
+        - Report Info: Need for specific health information and action protocols. -> Goal: Inform/Empower -> Viz: Text generation & TTS -> Interaction: User selects a disease or provides a scenario, clicks a button to get a detailed explanation or a step-by-step protocol. TTS button provides an audio version. -> Justification: This is the core LLM feature, turning a static report into a dynamic tool that provides critical, context-aware information. -> Library: Gemini API (text generation & TTS), Vanilla JS.
+    -->
+    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f8fafc;
+        }
+        .chart-container {
+            position: relative;
+            width: 100%;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
+            height: 400px;
+            max-height: 50vh;
+        }
+        .nav-link {
+            transition: color 0.3s ease;
+        }
+        .nav-link:hover, .nav-link.active {
+            color: #0d9488;
+        }
+        .tab.active {
+            border-color: #0d9488;
+            color: #0d9488;
+            background-color: #ccfbf1;
+        }
+        .diagram-box {
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+        .diagram-box:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+            border-color: #0d9488;
+        }
+        .timeline-item.active .timeline-dot {
+             background-color: #0d9488;
+             transform: scale(1.5);
+        }
+        .timeline-item.active .timeline-content h3 {
+            color: #0d9488;
+        }
+        .kpi-card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .kpi-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        .alert-banner {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            padding: 1rem;
+            text-align: center;
+            color: white;
+            font-weight: bold;
+            z-index: 1000;
+            display: none;
+        }
+        .flow-diagram {
+            display: grid;
+            gap: 1rem;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            margin-top: 2rem;
+            text-align: center;
+        }
+        .flow-step {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        .flow-icon {
+            font-size: 3rem;
+            line-height: 1;
+            margin-bottom: 0.5rem;
+        }
+        .arrow {
+            font-size: 2rem;
+            line-height: 1;
+            color: #d1d5db;
+        }
+        .lg\:grid-cols-5 {
+            grid-template-columns: repeat(5, minmax(0, 1fr));
+        }
+        .lg\:gap-8 {
+            gap: 2rem;
+        }
+    </style>
+</head>
+<body class="text-slate-700">
+
+    <div id="alert-banner" class="alert-banner">
+        <p id="alert-message"></p>
+    </div>
+
+    <header class="bg-white/80 backdrop-blur-lg shadow-sm sticky top-0 z-50">
+        <nav class="container mx-auto px-6 py-4 flex justify-between items-center">
+            <div class="flex items-center space-x-4">
+                <img src="logo.jpeg" alt="HealthGuard NE Logo" class="h-8">
+                <h1 class="text-xl font-bold text-teal-700">HealthGuard NE</h1>
+            </div>
+            <div class="hidden md:flex items-center space-x-8">
+                <a href="#problem" class="nav-link font-medium text-slate-600">The Problem</a>
+                <a href="#solution" class="nav-link font-medium text-slate-600">Our Solution</a>
+                <a href="#details" class="nav-link font-medium text-slate-600">How It Works</a>
+                <a href="#live-data" class="nav-link font-medium text-slate-600">Live Data</a>
+                <a href="#roadmap" class="nav-link font-medium text-slate-600">Implementation</a>
+                <a href="#challenges" class="nav-link font-medium text-slate-600">Challenges</a>
+                <a href="#gemini-features" class="nav-link font-medium text-slate-600">AI Features</a>
+                <a href="#system-flow" class="nav-link font-medium text-slate-600">System Flow</a>
+            </div>
+            <button id="mobile-menu-button" class="md:hidden text-slate-600">
+                <span class="text-2xl">☰</span>
+            </button>
+        </nav>
+        <div id="mobile-menu" class="hidden md:hidden px-6 pb-4">
+            <a href="#problem" class="block py-2 nav-link font-medium text-slate-600">The Problem</a>
+            <a href="#solution" class="block py-2 nav-link font-medium text-slate-600">Our Solution</a>
+            <a href="#details" class="block py-2 nav-link font-medium text-slate-600">How It Works</a>
+            <a href="#live-data" class="block py-2 nav-link font-medium text-slate-600">Live Data</a>
+            <a href="#roadmap" class="block py-2 nav-link font-medium text-slate-600">Implementation</a>
+            <a href="#challenges" class="block py-2 nav-link font-medium text-slate-600">Challenges</a>
+            <a href="#gemini-features" class="block py-2 nav-link font-medium text-slate-600">AI Features</a>
+            <a href="#system-flow" class="block py-2 nav-link font-medium text-slate-600">System Flow</a>
+        </div>
+    </header>
+
+    <main>
+        <section id="hero" class="bg-white py-16 sm:py-24">
+            <div class="container mx-auto px-6 text-center">
+                <h2 class="text-4xl md:text-5xl font-extrabold text-slate-800 tracking-tight">A Smart Health Shield for Rural Communities</h2>
+                <p class="mt-4 max-w-3xl mx-auto text-lg text-slate-600">Leveraging accessible technology and community partnership to create an early warning system against water-borne diseases in Northeast India, building a healthier, more resilient future.</p>
+            </div>
+        </section>
+
+        <section id="problem" class="py-16 sm:py-24">
+            <div class="container mx-auto px-6">
+                <div class="text-center max-w-3xl mx-auto">
+                    <h3 class="text-3xl font-bold text-slate-800">The Invisible Threat in the Water</h3>
+                    <p class="mt-4 text-lg text-slate-600">Water-borne diseases like cholera, typhoid, and acute diarrhea are a persistent public health crisis in rural Northeast India. Contaminated water sources, coupled with inadequate sanitation, create a cycle of illness that disproportionately affects the most vulnerable. This section visualizes the impact of the most common diseases in the region.</p>
+                </div>
+                <div class="mt-12">
+                    <div class="chart-container bg-white p-4 rounded-lg shadow-md">
+                        <canvas id="diseaseChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="solution" class="py-16 sm:py-24 bg-white">
+            <div class="container mx-auto px-6">
+                <div class="text-center max-w-3xl mx-auto">
+                    <h3 class="text-3xl font-bold text-slate-800">A Proactive System for Prevention</h3>
+                     <p class="mt-4 text-lg text-slate-600">Our proposed system is a multi-layered, community-centric framework designed to move from reactive treatment to proactive prevention. It integrates modern technology with local knowledge to create a robust monitoring and early warning mechanism. The diagram below shows the three core pillars of the system. Click on each pillar to learn more about how it works.</p>
+                </div>
+                <div class="mt-12 grid md:grid-cols-3 gap-8 text-center items-start">
+                    <div class="diagram-box flex flex-col items-center p-6 border-2 border-slate-200 rounded-lg" data-target-tab="collect">
+                        <div class="text-5xl mb-4">💧</div>
+                        <h4 class="text-xl font-semibold text-slate-800">Data Collection</h4>
+                        <p class="mt-2 text-slate-600">Gathering real-time water quality data through IoT sensors and community-reported health symptoms via a simple mobile app.</p>
+                    </div>
+                    <div class="diagram-box flex flex-col items-center p-6 border-2 border-slate-200 rounded-lg" data-target-tab="analyze">
+                        <div class="text-5xl mb-4">🧠</div>
+                        <h4 class="text-xl font-semibold text-slate-800">Analysis & Prediction</h4>
+                        <p class="mt-2 text-slate-600">Using a cloud platform with a machine learning model to analyze data, detect anomalies, and generate a dynamic "Water Safety Score".</p>
+                    </div>
+                    <div class="diagram-box flex flex-col items-center p-6 border-2 border-slate-200 rounded-lg" data-target-tab="alert">
+                         <div class="text-5xl mb-4">🔔</div>
+                        <h4 class="text-xl font-semibold text-slate-800">Early Warning & Alerts</h4>
+                        <p class="mt-2 text-slate-600">Issuing timely alerts via SMS, dashboards, and sirens, triggering a clear Community Action Protocol to prevent outbreaks.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="details" class="py-16 sm:py-24">
+            <div class="container mx-auto px-6">
+                <div class="text-center max-w-3xl mx-auto">
+                    <h3 class="text-3xl font-bold text-slate-800">How It Works: A Closer Look</h3>
+                    <p class="mt-4 text-lg text-slate-600">The system's effectiveness lies in the seamless integration of its components. From the moment data is captured at the source to the second an alert is sent, each step is designed for reliability and clarity. Explore the tabs below to understand the technical and operational details of each layer of the HealthGuard NE system.</p>
+                </div>
+                <div class="mt-12 max-w-4xl mx-auto">
+                    <div class="border-b border-slate-200 mb-8 flex justify-center flex-wrap">
+                        <button class="tab py-3 px-6 font-medium text-slate-500 border-b-2 border-transparent" data-tab="collect">Data Collection</button>
+                        <button class="tab py-3 px-6 font-medium text-slate-500 border-b-2 border-transparent" data-tab="analyze">Analysis & Prediction</button>
+                        <button class="tab py-3 px-6 font-medium text-slate-500 border-b-2 border-transparent" data-tab="alert">Early Warning</button>
+                        <button class="tab active py-3 px-6 font-medium text-slate-500 border-b-2 border-transparent" data-tab="doctor-portal">Doctor Portal</button>
+                    </div>
+                    <div id="tab-content" class="bg-white p-8 rounded-lg shadow-md">
+                        <div class="tab-pane hidden" id="collect">
+                            <h4 class="text-2xl font-bold text-slate-800 mb-4">The Perception Layer</h4>
+                            <p class="text-slate-600 mb-6">This foundational layer gathers critical data from two primary sources, combining automated sensing with human observation for a comprehensive view of public health risks.</p>
+                            <div class="space-y-4">
+                                <div class="p-4 bg-slate-50 rounded-lg">
+                                    <h5 class="font-semibold text-teal-700">Low-Cost IoT Sensors</h5>
+                                    <p class="text-sm text-slate-600">Networks of affordable, rugged sensors are deployed at community water sources to continuously measure key parameters like pH, Turbidity, Temperature, and Total Dissolved Solids (TDS).</p>
+                                </div>
+                                <div class="p-4 bg-slate-50 rounded-lg">
+                                    <h5 class="font-semibold text-teal-700">Manual Data Entry</h5>
+                                    <p class="text-sm text-slate-600">Community Health Workers (CHWs) use a simple mobile app to log observational data, including water color/odor, nearby sanitation conditions, and community-reported symptoms like new cases of diarrhea.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-pane hidden" id="analyze">
+                            <h4 class="text-2xl font-bold text-slate-800 mb-4">The Intelligence Engine</h4>
+                             <p class="text-slate-600 mb-6">Data is securely transmitted to a central cloud platform, where it is processed in real-time to identify risks and predict potential outbreaks before they happen.</p>
+                            <div class="space-y-4">
+                                <div class="p-4 bg-slate-50 rounded-lg">
+                                    <h5 class="font-semibold text-teal-700">Predictive Analytics (ML)</h5>
+                                    <p class="text-sm text-slate-600">A machine learning model, trained on historical data, identifies correlations between water quality changes and disease incidence, forecasting high-risk periods.</p>
+                                </div>
+                                <div class="p-4 bg-slate-50 rounded-lg">
+                                    <h5 class="font-semibold text-teal-700">Real-Time Risk Scoring</h5>
+                                    <p class="text-sm text-slate-600">The system generates a dynamic "Water Safety Score" for each source, providing an intuitive, color-coded risk level (Green: Safe, Yellow: Caution, Red: Unsafe) for the community.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-pane hidden" id="alert">
+                           <h4 class="text-2xl font-bold text-slate-800 mb-4">The Action Layer</h4>
+                           <p class="text-slate-600 mb-6">When a risk is detected, the system converts this data into immediate, life-saving action through a multi-channel alert system and a pre-defined community protocol.</p>
+                            <div class="space-y-4">
+                                <div class="p-4 bg-slate-50 rounded-lg">
+                                    <h5 class="font-semibold text-teal-700">Multi-Channel Alerts</h5>
+                                    <p class="text-sm text-slate-600">Automated alerts are sent via SMS/WhatsApp to health officials, displayed on community dashboards, and broadcast through audible sirens in high-risk situations.</p>
+                                </div>
+                                <div class="p-4 bg-slate-50 rounded-lg">
+                                    <h5 class="font-semibold text-teal-700">Community Action Protocol</h5>
+                                    <p class="text-sm text-slate-600">Alerts trigger a clear set of actions, such as halting consumption from a contaminated source, distributing purification tablets, and mobilizing CHWs for health education.</p>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="tab-pane active" id="doctor-portal">
+                             <h4 class="text-2xl font-bold text-slate-800 mb-4">Doctor Portal</h4>
+                             <p class="text-slate-600 mb-6">This section is for medical professionals to post official advisories and connect with community members for urgent health queries. It helps bridge the gap between real-time data and actionable medical advice on the ground.</p>
+                             <div class="grid md:grid-cols-2 gap-8">
+                                <div class="p-4 rounded-lg border border-slate-200">
+                                     <h5 class="text-lg font-semibold text-slate-800 mb-4">Add a Precaution</h5>
+                                     <textarea id="doctor-precaution-input" class="w-full h-24 p-2 rounded-lg border border-slate-300 resize-none text-sm" placeholder="Post a new precaution or advisory..."></textarea>
+                                     <button id="add-precaution-button" class="mt-4 bg-teal-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-teal-700 transition-colors">Post Advisory</button>
+                                     <div class="mt-6">
+                                        <h6 class="font-semibold text-md text-slate-700 mb-2">Recent Advisories:</h6>
+                                        <div id="precautions-display" class="space-y-4 text-sm"></div>
+                                     </div>
+                                </div>
+                                <div class="p-4 rounded-lg border border-slate-200">
+                                     <h5 class="text-lg font-semibold text-slate-800 mb-4">Connect with a Medical Advisor</h5>
+                                     <div id="doctor-chat-container" class="flex flex-col h-72 p-4 border rounded-lg overflow-y-auto bg-slate-50 mb-4 text-sm"></div>
+                                     <div class="flex">
+                                        <input type="text" id="doctor-chat-input" class="flex-grow p-2 rounded-l-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-600 text-sm" placeholder="Ask the doctor a question...">
+                                        <button id="doctor-chat-send" class="bg-teal-600 text-white py-2 px-4 rounded-r-lg font-semibold hover:bg-teal-700 transition-colors">Send</button>
+                                    </div>
+                                </div>
+                             </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="live-data" class="py-16 sm:py-24">
+            <div class="container mx-auto px-6">
+                <div class="text-center max-w-3xl mx-auto">
+                    <h3 class="text-3xl font-bold text-slate-800">Real-Time Water Quality Dashboard</h3>
+                    <p class="mt-4 text-lg text-slate-600">This dashboard simulates live data from a community water source. Watch the chart and metrics update every few seconds, providing an immediate snapshot of the water's safety and health trends.</p>
+                </div>
+                <div class="mt-12 bg-white p-8 rounded-lg shadow-md">
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-8 mb-8 items-center">
+                        <div class="md:col-span-1 text-center">
+                            <h4 class="text-2xl font-bold text-slate-800">Water Safety Score</h4>
+                            <div id="safety-score" class="text-5xl font-extrabold mt-4 text-green-500">85</div>
+                            <p id="safety-message" class="text-sm text-slate-600 mt-2">All systems are nominal.</p>
+                        </div>
+                        <div class="md:col-span-3">
+                            <div class="chart-container">
+                                <canvas id="realTimeChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 text-center">
+                        <div class="kpi-card bg-slate-100 p-6 rounded-lg shadow-sm">
+                            <h5 class="text-lg font-semibold text-slate-700">pH Level</h5>
+                            <p id="kpi-ph" class="text-3xl font-bold text-slate-800 mt-2">7.2</p>
+                            <p class="text-xs text-slate-500 mt-1">Normal range: 6.5 - 8.5</p>
+                        </div>
+                        <div class="kpi-card bg-slate-100 p-6 rounded-lg shadow-sm">
+                            <h5 class="text-lg font-semibold text-slate-700">Turbidity</h5>
+                            <p id="kpi-turbidity" class="text-3xl font-bold text-slate-800 mt-2">1.5 NTU</p>
+                            <p class="text-xs text-slate-500 mt-1">Ideal: &lt; 5 NTU</p>
+                        </div>
+                        <div class="kpi-card bg-slate-100 p-6 rounded-lg shadow-sm">
+                            <h5 class="text-lg font-semibold text-slate-700">Total Dissolved Solids</h5>
+                            <p id="kpi-tds" class="text-3xl font-bold text-slate-800 mt-2">350 ppm</p>
+                            <p class="text-xs text-slate-500 mt-1">Ideal: &lt; 500 ppm</p>
+                        </div>
+                    </div>
+                    <hr class="my-12">
+                     <div class="bg-teal-50 p-6 rounded-lg">
+                        <h4 class="text-2xl font-bold text-slate-800 mb-4">✨ Data Analysis & Risk Reporter</h4>
+                        <p class="text-slate-600 mb-6">Use AI to analyze the data and generate a clear, concise health report. This transforms raw numbers into actionable intelligence for health workers.</p>
+                        <div class="flex flex-wrap gap-4 mb-6">
+                            <button id="analyze-button" class="bg-teal-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-teal-700 transition-colors">Analyze Trends ✨</button>
+                            <button id="risk-report-button" class="bg-slate-800 text-white py-2 px-4 rounded-lg font-semibold hover:bg-slate-900 transition-colors">Generate Risk Report ✨</button>
+                        </div>
+                        <div id="analysis-output" class="mt-4 hidden p-4 bg-white rounded-lg border border-slate-200">
+                             <p class="text-sm text-slate-600 italic mb-2">Generated by AI:</p>
+                             <p id="analysis-text" class="text-slate-700"></p>
+                             <button id="analysis-listen" class="mt-4 bg-slate-200 text-slate-600 py-1 px-3 rounded-lg text-sm font-semibold hover:bg-slate-300 transition-colors">Listen</button>
+                        </div>
+                        <div id="analysis-loading" class="mt-8 hidden flex justify-center items-center">
+                            <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
+                            <span class="ml-4 text-slate-600">Analyzing data...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="roadmap" class="py-16 sm:py-24 bg-white">
+            <div class="container mx-auto px-6">
+                <div class="text-center max-w-3xl mx-auto">
+                    <h3 class="text-3xl font-bold text-slate-800">Implementation Roadmap</h3>
+                    <p class="mt-4 text-lg text-slate-600">We propose a phased approach to ensure successful deployment, community adoption, and long-term scalability. This strategy allows for learning and refinement at each stage before wider expansion. Click on each phase to see its key objectives.</p>
+                </div>
+                <div class="mt-16 max-w-5xl mx-auto">
+                    <div class="relative">
+                        <div class="absolute left-1/2 -ml-0.5 w-1 h-full bg-slate-200"></div>
+                        <div id="timeline-container" class="space-y-16">
+                            <div class="timeline-item active" data-phase="phase1">
+                                <div class="flex items-center justify-center relative">
+                                    <div class="timeline-dot w-4 h-4 rounded-full bg-slate-300 z-10 transition-all duration-300"></div>
+                                </div>
+                                <div class="timeline-content text-center mt-4">
+                                    <h3 class="text-xl font-semibold text-slate-800 transition-colors duration-300">Phase 1: Pilot Project</h3>
+                                </div>
+                            </div>
+                            <div class="timeline-item" data-phase="phase2">
+                                <div class="flex items-center justify-center relative">
+                                     <div class="timeline-dot w-4 h-4 rounded-full bg-slate-300 z-10 transition-all duration-300"></div>
+                                </div>
+                                <div class="timeline-content text-center mt-4">
+                                    <h3 class="text-xl font-semibold text-slate-800 transition-colors duration-300">Phase 2: Refinement & Expansion</h3>
+                                </div>
+                            </div>
+                            <div class="timeline-item" data-phase="phase3">
+                                <div class="flex items-center justify-center relative">
+                                     <div class="timeline-dot w-4 h-4 rounded-full bg-slate-300 z-10 transition-all duration-300"></div>
+                                </div>
+                                <div class="timeline-content text-center mt-4">
+                                    <h3 class="text-xl font-semibold text-slate-800 transition-colors duration-300">Phase 3: Scale & Integration</h3>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="phase-details" class="mt-12 bg-slate-50 p-6 rounded-lg text-center min-h-[100px]">
+                        <p class="text-slate-600"></p>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <section id="challenges" class="py-16 sm:py-24">
+             <div class="container mx-auto px-6">
+                <div class="text-center max-w-3xl mx-auto">
+                    <h3 class="text-3xl font-bold text-slate-800">Overcoming Challenges Together</h3>
+                    <p class="mt-4 text-lg text-slate-600">Deploying technology in rural areas presents unique challenges. Our framework anticipates these hurdles and incorporates strategies to mitigate them through thoughtful design, strong community partnerships, and a focus on sustainability.</p>
+                </div>
+                <div class="mt-12 grid md:grid-cols-2 lg:grid-cols-4 gap-8">
+                    <div class="bg-white p-6 rounded-lg shadow">
+                        <h4 class="font-bold text-teal-700">Connectivity</h4>
+                        <p class="mt-2 text-sm text-slate-600">Utilizing Low-Power Wide-Area Network (LPWAN) technology and solar-powered hubs to ensure reliable data transmission even in areas with poor mobile coverage.</p>
+                    </div>
+                     <div class="bg-white p-6 rounded-lg shadow">
+                        <h4 class="font-bold text-teal-700">Digital Literacy</h4>
+                        <p class="mt-2 text-sm text-slate-600">Designing highly intuitive interfaces, like color-coded dashboards, and relying on trained CHWs to bridge the technology gap with the community.</p>
+                    </div>
+                     <div class="bg-white p-6 rounded-lg shadow">
+                        <h4 class="font-bold text-teal-700">Community Trust</h4>
+                        <p class="mt-2 text-sm text-slate-600">Co-creating the system with community members, ensuring their input shapes the design and implementation, fostering a sense of local ownership.</p>
+                    </div>
+                     <div class="bg-white p-6 rounded-lg shadow">
+                        <h4 class="font-bold text-teal-700">Cost & Maintenance</h4>
+                        <p class="mt-2 text-sm text-slate-600">Using low-cost components (e.g., Arduino), developing a sustainable funding model, and training local technicians to handle repairs and maintenance.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <section id="gemini-features" class="py-16 sm:py-24 bg-teal-50">
+            <div class="container mx-auto px-6">
+                 <div class="text-center max-w-3xl mx-auto">
+                    <h3 class="text-3xl font-bold text-slate-800">✨ AI-Powered Health Insights</h3>
+                    <p class="mt-4 text-lg text-slate-600">These features leverage the power of a large language model to provide instant, dynamic health information and action protocols, making the system a more powerful tool for frontline health workers.</p>
+                </div>
+                <div class="mt-12 max-w-4xl mx-auto bg-white p-8 rounded-lg shadow-md">
+                    <h4 class="text-2xl font-bold text-slate-800 mb-4">✨ Health & Protocol Advisor</h4>
+                    <p class="text-slate-600 mb-6">Select a disease to get an immediate summary of its symptoms and prevention, or describe a scenario to generate a custom action protocol.</p>
+                    <div class="flex flex-wrap gap-4 mb-6">
+                        <button class="bg-teal-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-teal-700 transition-colors" data-disease="Cholera">Cholera</button>
+                        <button class="bg-teal-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-teal-700 transition-colors" data-disease="Typhoid">Typhoid</button>
+                        <button class="bg-teal-600 text-white py-2 px-4 rounded-lg font-semibold hover:bg-teal-700 transition-colors" data-disease="Diarrheal Diseases">Diarrheal Diseases</button>
+                    </div>
+                    <div id="protocol-creator" class="mt-8">
+                         <h5 class="font-semibold text-xl text-slate-800 mb-2">Generate a Custom Protocol:</h5>
+                         <p class="text-sm text-slate-600 mb-2">Example: "High turbidity levels in the village well after heavy monsoon rain. Advise on immediate steps for villagers."</p>
+                         <textarea id="scenario-input" class="w-full h-24 p-2 rounded-lg border border-slate-300 resize-none text-sm" placeholder="Describe a health scenario or water quality issue here..."></textarea>
+                         <button id="generate-button" class="mt-4 bg-slate-800 text-white py-2 px-4 rounded-lg font-semibold hover:bg-slate-900 transition-colors">Generate Protocol ✨</button>
+                    </div>
+                    <div id="ai-response-container" class="mt-8 hidden">
+                         <div class="flex items-center justify-between mb-4">
+                            <h5 class="text-2xl font-bold text-slate-800">Generated Insight</h5>
+                            <button id="listen-button" class="bg-slate-200 text-slate-600 py-1 px-3 rounded-lg text-sm font-semibold hover:bg-slate-300 transition-colors">Listen</button>
+                         </div>
+                         <p id="ai-response" class="p-4 bg-slate-50 rounded-lg text-slate-700"></p>
+                    </div>
+                    <div id="loading-indicator" class="mt-8 hidden flex justify-center items-center">
+                        <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
+                        <span class="ml-4 text-slate-600">Generating...</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+        
+        <section id="ai-visuals" class="py-16 sm:py-24">
+            <div class="container mx-auto px-6">
+                 <div class="text-center max-w-3xl mx-auto">
+                    <h3 class="text-3xl font-bold text-slate-800">✨ AI-Powered Health Assistant</h3>
+                    <p class="mt-4 text-lg text-slate-600">Interact with a health expert or generate visuals to help you communicate key concepts in your community.</p>
+                </div>
+                 <div class="mt-12 max-w-4xl mx-auto bg-white p-8 rounded-lg shadow-md">
+                     <div class="flex flex-col md:flex-row gap-8">
+                         <div class="w-full md:w-1/2">
+                              <h4 class="text-2xl font-bold text-slate-800 mb-4">Chat with the Assistant</h4>
+                              <div id="chat-container" class="flex flex-col h-96 p-4 border rounded-lg overflow-y-auto bg-slate-50 mb-4"></div>
+                              <div class="flex">
+                                 <input type="text" id="chat-input" class="flex-grow p-2 rounded-l-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-600 text-sm" placeholder="Ask a health question...">
+                                 <button id="chat-send" class="bg-teal-600 text-white py-2 px-4 rounded-r-lg font-semibold hover:bg-teal-700 transition-colors">Send</button>
+                             </div>
+                         </div>
+                         <div class="w-full md:w-1/2">
+                              <h4 class="text-2xl font-bold text-slate-800 mb-4">Generate an Image ✨</h4>
+                              <p class="text-slate-600 mb-4 text-sm">Create a visual representation of a health concept. Example: "A drawing of safe sanitation practices in a village"</p>
+                              <div class="flex">
+                                 <input type="text" id="image-input" class="flex-grow p-2 rounded-l-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-600 text-sm" placeholder="Describe the image to generate...">
+                                 <button id="image-generate-button" class="bg-slate-800 text-white py-2 px-4 rounded-r-lg font-semibold hover:bg-slate-900 transition-colors">Generate</button>
+                             </div>
+                             <div id="image-loading-indicator" class="mt-4 hidden justify-center items-center">
+                                  <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-slate-900"></div>
+                             </div>
+                             <img id="generated-image" class="mt-4 rounded-lg shadow-md hidden" alt="Generated visual insight">
+                         </div>
+                     </div>
+                 </div>
+            </div>
+        </section>
+        
+        <section id="system-flow" class="py-16 sm:py-24 bg-white">
+            <div class="container mx-auto px-6 text-center">
+                <h3 class="text-3xl font-bold text-slate-800">Comprehensive System Flow Diagram</h3>
+                <p class="mt-4 max-w-3xl mx-auto text-lg text-slate-600">This diagram shows the complete, end-to-end journey of data within the system, from the ground to the community. Follow the arrows to understand the full workflow from monitoring to action.</p>
+                <div class="flow-diagram lg:grid-cols-5 lg:gap-8 mt-12">
+                    <div class="flow-step">
+                        <span class="flow-icon">💧</span>
+                        <h4 class="font-semibold text-slate-800 mt-2">1. Water Sources</h4>
+                        <p class="text-sm text-slate-600">Real-world water points in villages</p>
+                    </div>
+                    <div class="flow-step">
+                        <span class="arrow lg:mt-6">→</span>
+                        <h4 class="sr-only">Arrow</h4>
+                    </div>
+                    <div class="flow-step">
+                        <span class="flow-icon">📡</span>
+                        <h4 class="font-semibold text-slate-800 mt-2">2. IoT Sensor Hubs</h4>
+                        <p class="text-sm text-slate-600">Collects data on pH, Turbidity, TDS, etc.</p>
+                    </div>
+                    <div class="flow-step">
+                        <span class="arrow lg:mt-6">→</span>
+                        <h4 class="sr-only">Arrow</h4>
+                    </div>
+                    <div class="flow-step">
+                        <span class="flow-icon">☁️</span>
+                        <h4 class="font-semibold text-slate-800 mt-2">3. Cloud Platform</h4>
+                        <p class="text-sm text-slate-600">Stores and analyzes data with AI/ML</p>
+                    </div>
+                    <div class="flow-step lg:col-start-3 lg:row-start-2">
+                        <span class="arrow block rotate-90 lg:rotate-0 lg:mt-6">↓</span>
+                        <h4 class="sr-only">Arrow</h4>
+                    </div>
+                    <div class="flow-step lg:col-start-1 lg:row-start-3">
+                        <span class="flow-icon">👩‍⚕️</span>
+                        <h4 class="font-semibold text-slate-800 mt-2">4. Community Health Workers</h4>
+                        <p class="text-sm text-slate-600">Receive alerts & verify on the ground</p>
+                    </div>
+                    <div class="flow-step lg:col-start-2 lg:row-start-3">
+                        <span class="arrow lg:mt-6">←</span>
+                        <h4 class="sr-only">Arrow</h4>
+                    </div>
+                    <div class="flow-step lg:col-start-3 lg:row-start-3">
+                        <span class="flow-icon">🔔</span>
+                        <h4 class="font-semibold text-slate-800 mt-2">5. Early Warning Alerts</h4>
+                        <p class="text-sm text-slate-600">SMS, app notifications, public sirens</p>
+                    </div>
+                    <div class="flow-step lg:col-start-4 lg:row-start-3">
+                        <span class="arrow lg:mt-6">←</span>
+                        <h4 class="sr-only">Arrow</h4>
+                    </div>
+                    <div class="flow-step lg:col-start-5 lg:row-start-3">
+                        <span class="flow-icon">🏠</span>
+                        <h4 class="font-semibold text-slate-800 mt-2">6. Community Action</h4>
+                        <p class="text-sm text-slate-600">Implement safety protocols to prevent disease</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    </main>
+    
+    <footer class="bg-slate-800 text-slate-300 py-8">
+        <div class="container mx-auto px-6 text-center">
+            <p>&copy; 2025 HealthGuard NE Initiative. A conceptual framework for a healthier tomorrow.</p>
+        </div>
+    </footer>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', function () {
+            
+            const mobileMenuButton = document.getElementById('mobile-menu-button');
+            const mobileMenu = document.getElementById('mobile-menu');
+
+            mobileMenuButton.addEventListener('click', () => {
+                mobileMenu.classList.toggle('hidden');
+            });
+            
+            const navLinks = document.querySelectorAll('.nav-link');
+            const sections = document.querySelectorAll('main section');
+
+            const observerOptions = {
+                root: null,
+                rootMargin: '0px',
+                threshold: 0.4
+            };
+
+            const observer = new IntersectionObserver((entries, observer) => {
+                entries.forEach(entry => {
+                    if (entry.isIntersecting) {
+                        navLinks.forEach(link => {
+                            link.classList.remove('active');
+                            if (link.getAttribute('href').substring(1) === entry.target.id) {
+                                link.classList.add('active');
+                            }
+                        });
+                    }
+                });
+            }, observerOptions);
+
+            sections.forEach(section => {
+                observer.observe(section);
+            });
+            
+            const diseaseCtx = document.getElementById('diseaseChart').getContext('2d');
+            const diseaseChart = new Chart(diseaseCtx, {
+                type: 'bar',
+                data: {
+                    labels: ['Acute Diarrheal Disease', 'Typhoid', 'Cholera', 'Hepatitis A & E', 'Dysentery'],
+                    datasets: [{
+                        label: 'Estimated Annual Impact (Cases per 100,000)',
+                        data: [1800, 450, 150, 300, 600],
+                        backgroundColor: [
+                            'rgba(15, 118, 110, 0.6)',
+                            'rgba(13, 148, 136, 0.6)',
+                            'rgba(20, 184, 166, 0.6)',
+                            'rgba(94, 234, 212, 0.6)',
+                            'rgba(45, 212, 191, 0.6)'
+                        ],
+                        borderColor: [
+                            'rgba(15, 118, 110, 1)',
+                            'rgba(13, 148, 136, 1)',
+                            'rgba(20, 184, 166, 1)',
+                            'rgba(94, 234, 212, 1)',
+                            'rgba(45, 212, 191, 1)'
+                        ],
+                        borderWidth: 1
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    indexAxis: 'y',
+                    scales: {
+                        x: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'Estimated Cases'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            display: false
+                        },
+                        title: {
+                            display: true,
+                            text: 'Common Water-Borne Diseases in Rural Northeast India',
+                            font: {
+                                size: 16
+                            }
+                        },
+                        tooltip: {
+                             callbacks: {
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${context.raw}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            const tabs = document.querySelectorAll('.tab');
+            const tabPanes = document.querySelectorAll('.tab-pane');
+            const diagramBoxes = document.querySelectorAll('.diagram-box');
+
+            function showTab(tabId) {
+                tabs.forEach(t => {
+                    t.classList.remove('active');
+                    if(t.dataset.tab === tabId) t.classList.add('active');
+                });
+                tabPanes.forEach(p => {
+                    p.classList.add('hidden');
+                    p.classList.remove('active');
+                    if(p.id === tabId) {
+                        p.classList.remove('hidden');
+                        p.classList.add('active');
+                    }
+                });
+            }
+
+            tabs.forEach(tab => {
+                tab.addEventListener('click', () => {
+                    showTab(tab.dataset.tab);
+                });
+            });
+
+            diagramBoxes.forEach(box => {
+                box.addEventListener('click', () => {
+                    const targetTab = box.dataset.targetTab;
+                    document.getElementById('details').scrollIntoView({ behavior: 'smooth' });
+                    showTab(targetTab);
+                });
+            });
+
+            const timelineItems = document.querySelectorAll('.timeline-item');
+            const phaseDetailsContainer = document.getElementById('phase-details').querySelector('p');
+            const phaseData = {
+                phase1: "Focus on establishing foundational infrastructure in a single pilot village. Key goals include deploying sensors, training Community Health Workers (CHWs), and co-creating the alert protocol with the community to ensure relevance and buy-in.",
+                phase2: "Based on learnings from the pilot, refine the technology and protocols. Expand the system to a cluster of neighboring villages, focusing on seamless data integration, network stability, and standardizing operational procedures.",
+                phase3: "Integrate the system with local government health and sanitation departments. Focus on long-term sustainability, policy integration, and using the collected data to inform regional public health strategy and resource allocation."
+            };
+
+            function updatePhaseDetails(phaseId) {
+                timelineItems.forEach(item => item.classList.remove('active'));
+                const activeItem = document.querySelector(`.timeline-item[data-phase="${phaseId}"]`);
+                if(activeItem) {
+                    activeItem.classList.add('active');
+                }
+                phaseDetailsContainer.textContent = phaseData[phaseId];
+            }
+
+            timelineItems.forEach(item => {
+                item.addEventListener('click', () => {
+                    updatePhaseDetails(item.dataset.phase);
+                });
+            });
+            
+            updatePhaseDetails('phase1');
+
+            const diseaseButtons = document.querySelectorAll('#gemini-features button[data-disease]');
+            const generateButton = document.getElementById('generate-button');
+            const aiResponseContainer = document.getElementById('ai-response-container');
+            const aiResponseElement = document.getElementById('ai-response');
+            const loadingIndicator = document.getElementById('loading-indicator');
+            const listenButton = document.getElementById('listen-button');
+
+            const apiKey = ""; // Add your Gemini API key here
+            const textModel = "gemini-2.5-flash-preview-05-20";
+            const ttsModel = "gemini-2.5-flash-preview-tts";
+            const imageModel = "imagen-3.0-generate-002";
+
+            async function callTextAPI(prompt) {
+                if (apiKey === "") {
+                    aiResponseElement.textContent = 'ERROR: API key is missing. Please add your Gemini API key to the code.';
+                    aiResponseContainer.classList.remove('hidden');
+                    loadingIndicator.classList.add('hidden');
+                    return;
+                }
+
+                loadingIndicator.classList.remove('hidden');
+                aiResponseContainer.classList.add('hidden');
+                aiResponseElement.textContent = "";
+                listenButton.style.display = 'none';
+
+                let url = `https://generativelanguage.googleapis.com/v1beta/models/${textModel}:generateContent?key=${apiKey}`;
+                let payload = {
+                    contents: [{ parts: [{ text: prompt }] }],
+                    systemInstruction: {
+                        parts: [{ text: "You are a public health advisor for rural communities. Explain complex health topics in simple, direct language. Be empathetic and focus on actionable advice. Keep responses under 150 words." }]
+                    }
+                };
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+                    const result = await response.json();
+                    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) {
+                        aiResponseElement.textContent = text;
+                        aiResponseContainer.classList.remove('hidden');
+                        listenButton.style.display = 'inline-block';
+                    }
+                } catch (error) {
+                    aiResponseElement.textContent = 'Sorry, something went wrong. Please try again.';
+                    aiResponseContainer.classList.remove('hidden');
+                    console.error("Gemini API Error:", error);
+                } finally {
+                    loadingIndicator.classList.add('hidden');
+                }
+            }
+
+            async function callImageAPI(prompt) {
+                if (apiKey === "") {
+                    const imageElement = document.getElementById('generated-image');
+                    const imageLoading = document.getElementById('image-loading-indicator');
+                    imageElement.src = '';
+                    imageElement.alt = 'ERROR: API key is missing. Please add your Gemini API key to the code.';
+                    imageLoading.classList.add('hidden');
+                    imageElement.classList.remove('hidden');
+                    return;
+                }
+
+                const imageLoading = document.getElementById('image-loading-indicator');
+                const imageElement = document.getElementById('generated-image');
+                imageLoading.classList.remove('hidden');
+                imageElement.classList.add('hidden');
+
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${imageModel}:predict?key=${apiKey}`;
+                const payload = { instances: { prompt: prompt }, parameters: { "sampleCount": 1} };
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) throw new Error(`Image API call failed: ${response.status} ${response.statusText}`);
+
+                    const result = await response.json();
+                    const base64Data = result?.predictions?.[0]?.bytesBase64Encoded;
+                    if (base64Data) {
+                        imageElement.src = `data:image/png;base64,${base64Data}`;
+                        imageElement.classList.remove('hidden');
+                    }
+                } catch (error) {
+                    console.error("Image API Error:", error);
+                } finally {
+                    imageLoading.classList.add('hidden');
+                }
+            }
+            
+            async function callTTSAPI(text) {
+                if (apiKey === "") {
+                    console.error('ERROR: API key is missing. Please add your Gemini API key to the code.');
+                    return;
+                }
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${ttsModel}:generateContent?key=${apiKey}`;
+                const payload = {
+                    contents: [{ parts: [{ text: text }] }],
+                    generationConfig: {
+                        responseModalities: ["AUDIO"],
+                        speechConfig: {
+                            voiceConfig: {
+                                prebuiltVoiceConfig: { voiceName: "Iapetus" }
+                            }
+                        }
+                    }
+                };
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    if (!response.ok) throw new Error(`TTS API call failed: ${response.status} ${response.statusText}`);
+                    
+                    const result = await response.json();
+                    const part = result?.candidates?.[0]?.content?.parts?.[0];
+                    const audioData = part?.inlineData?.data;
+                    const mimeType = part?.inlineData?.mimeType;
+
+                    if (audioData && mimeType) {
+                        const pcmData = Uint8Array.from(atob(audioData), c => c.charCodeAt(0));
+                        const sampleRate = parseInt(mimeType.match(/rate=(\d+)/)[1], 10);
+                        const wavBlob = pcmToWav(new Int16Array(pcmData.buffer), sampleRate);
+                        const audioUrl = URL.createObjectURL(wavBlob);
+                        const audio = new Audio(audioUrl);
+                        audio.play();
+                    }
+                } catch (error) {
+                    console.error("TTS API Error:", error);
+                }
+            }
+
+            function pcmToWav(pcmData, sampleRate) {
+                const buffer = new ArrayBuffer(44 + pcmData.length * 2);
+                const view = new DataView(buffer);
+
+                writeString(view, 0, 'RIFF');
+                view.setUint32(4, 36 + pcmData.length * 2, true);
+                writeString(view, 8, 'WAVE');
+                writeString(view, 12, 'fmt ');
+                view.setUint32(16, 16, true);
+                view.setUint16(20, 1, true);
+                view.setUint16(22, 1, true);
+                view.setUint32(24, sampleRate, true);
+                view.setUint32(28, sampleRate * 2, true);
+                view.setUint16(32, 2, true);
+                view.setUint16(34, 16, true);
+                writeString(view, 36, 'data');
+                view.setUint32(40, pcmData.length * 2, true);
+
+                for (let i = 0; i < pcmData.length; i++) {
+                    view.setInt16(44 + i * 2, pcmData[i], true);
+                }
+
+                return new Blob([view], { type: 'audio/wav' });
+            }
+
+            function writeString(view, offset, string) {
+                for (let i = 0; i < string.length; i++) {
+                    view.setUint8(offset + i, string.charCodeAt(i));
+                }
+            }
+            
+            diseaseButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    const diseaseName = button.dataset.disease;
+                    const prompt = `Explain the symptoms, transmission, and basic prevention methods for ${diseaseName}. Focus on practical advice for a rural community.`;
+                    callTextAPI(prompt);
+                });
+            });
+
+            generateButton.addEventListener('click', () => {
+                const scenario = document.getElementById('scenario-input').value;
+                const prompt = `You are a public health official. Given the following situation: "${scenario}", draft a 5-step action plan to be followed by a community health worker to mitigate the risk. The plan should be simple, direct, and actionable.`;
+                if (scenario.trim() !== '') {
+                    callTextAPI(prompt);
+                }
+            });
+
+            listenButton.addEventListener('click', () => {
+                const textToSpeak = aiResponseElement.textContent;
+                if (textToSpeak.trim() !== '') {
+                    callTTSAPI(textToSpeak);
+                }
+            });
+
+            // New AI Features
+            const chatInput = document.getElementById('chat-input');
+            const chatSendButton = document.getElementById('chat-send');
+            const chatContainer = document.getElementById('chat-container');
+            const imageInput = document.getElementById('image-input');
+            const imageGenerateButton = document.getElementById('image-generate-button');
+            
+            const chatHistory = [{ role: 'user', parts: [{ text: 'Hello, I need health advice for my community.' }] }];
+
+            function appendMessage(role, text) {
+                const messageDiv = document.createElement('div');
+                messageDiv.classList.add('mb-2', 'p-2', 'rounded-lg', 'max-w-xs');
+                messageDiv.textContent = text;
+                if (role === 'user') {
+                    messageDiv.classList.add('bg-teal-200', 'self-end', 'text-right');
+                } else {
+                    messageDiv.classList.add('bg-slate-200', 'self-start');
+                }
+                chatContainer.appendChild(messageDiv);
+                chatContainer.scrollTop = chatContainer.scrollHeight;
+            }
+
+            async function sendChatPrompt(prompt) {
+                if (apiKey === "") {
+                    appendMessage('model', 'ERROR: API key is missing. Please add your Gemini API key to the code.');
+                    return;
+                }
+                appendMessage('user', prompt);
+                chatInput.value = '';
+                
+                chatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${textModel}:generateContent?key=${apiKey}`;
+                const payload = {
+                    contents: chatHistory,
+                    systemInstruction: {
+                        parts: [{ text: "You are a friendly and knowledgeable health assistant for rural India. Provide clear, simple, and actionable advice. Do not suggest or replace a doctor's advice." }]
+                    }
+                };
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error(`Chat API call failed: ${response.status} ${response.statusText}`);
+                    const result = await response.json();
+                    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+
+                    if (text) {
+                        appendMessage('model', text);
+                        chatHistory.push({ role: 'model', parts: [{ text: text }] });
+                    }
+                } catch (error) {
+                    appendMessage('model', 'Sorry, I am unable to respond right now. Please try again later.');
+                    console.error("Chat API Error:", error);
+                }
+            }
+            
+            chatSendButton.addEventListener('click', () => {
+                const prompt = chatInput.value.trim();
+                if (prompt !== '') {
+                    sendChatPrompt(prompt);
+                }
+            });
+
+            chatInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && chatInput.value.trim() !== '') {
+                    sendChatPrompt(chatInput.value.trim());
+                }
+            });
+            
+            imageGenerateButton.addEventListener('click', () => {
+                const imagePrompt = imageInput.value.trim();
+                if (imagePrompt !== '') {
+                    callImageAPI(imagePrompt);
+                }
+            });
+
+            appendMessage('model', 'Hello! How can I help you and your community today?');
+
+            // New Real-Time Data Logic
+            const realTimeCtx = document.getElementById('realTimeChart').getContext('2d');
+            const safetyScoreEl = document.getElementById('safety-score');
+            const safetyMessageEl = document.getElementById('safety-message');
+            const kpiPhEl = document.getElementById('kpi-ph');
+            const kpiTurbidityEl = document.getElementById('kpi-turbidity');
+            const kpiTdsEl = document.getElementById('kpi-tds');
+            const alertBanner = document.getElementById('alert-banner');
+            const alertMessage = document.getElementById('alert-message');
+
+            let timeLabels = [];
+            let phData = [];
+            let turbidityData = [];
+            let tdsData = [];
+
+            const maxDataPoints = 15;
+
+            const realTimeChart = new Chart(realTimeCtx, {
+                type: 'line',
+                data: {
+                    labels: timeLabels,
+                    datasets: [{
+                        label: 'pH Level',
+                        data: phData,
+                        borderColor: 'rgb(20, 184, 166)',
+                        backgroundColor: 'rgba(20, 184, 166, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 0
+                    }, {
+                        label: 'Turbidity (NTU)',
+                        data: turbidityData,
+                        borderColor: 'rgb(103, 232, 249)',
+                        backgroundColor: 'rgba(103, 232, 249, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 0
+                    }, {
+                        label: 'TDS (ppm)',
+                        data: tdsData,
+                        borderColor: 'rgb(16, 185, 129)',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        tension: 0.3,
+                        pointRadius: 0
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: {
+                            display: false
+                        },
+                        y: {
+                            beginAtZero: true,
+                            max: 1000,
+                            title: {
+                                display: true,
+                                text: 'Sensor Readings'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: {
+                            position: 'top',
+                            labels: {
+                                boxWidth: 20
+                            }
+                        },
+                        tooltip: {
+                            mode: 'index',
+                            intersect: false
+                        }
+                    },
+                    animation: false
+                }
+            });
+
+            function generateSimulatedData() {
+                let newPH, newTurbidity, newTDS;
+                const isWarning = Math.random() < 0.7; // Increased probability of a warning
+                if (isWarning) {
+                    newPH = (Math.random() * (10 - 5) + 5).toFixed(1);
+                    newTurbidity = (Math.random() * (20 - 5) + 5).toFixed(1);
+                    newTDS = (Math.random() * (1000 - 500) + 500).toFixed(0);
+                } else {
+                    newPH = (Math.random() * (8.5 - 6.5) + 6.5).toFixed(1);
+                    newTurbidity = (Math.random() * (5 - 0.5) + 0.5).toFixed(1);
+                    newTDS = (Math.random() * (500 - 150) + 150).toFixed(0);
+                }
+                return { newPH, newTurbidity, newTDS };
+            }
+
+            function updateDashboard() {
+                const { newPH, newTurbidity, newTDS } = generateSimulatedData();
+
+                let score = 100;
+                let message = "All systems are nominal.";
+                let color = "text-green-500";
+                
+                if (newPH < 6.5 || newPH > 8.5) {
+                    score -= 10;
+                    message = "Warning: pH levels are outside the ideal range.";
+                    color = "text-yellow-500";
+                }
+                if (newTurbidity > 5) {
+                    score -= (newTurbidity - 5) * 5;
+                    message = "Warning: Turbidity is high, potential contaminants present.";
+                    color = "text-red-500";
+                }
+                if (newTDS > 500) {
+                    score -= (newTDS - 500) * 0.05;
+                    message = "Warning: Total dissolved solids are elevated.";
+                    color = "text-yellow-500";
+                }
+
+                safetyScoreEl.textContent = Math.max(0, Math.floor(score));
+                safetyScoreEl.className = `text-5xl font-extrabold mt-4 ${color}`;
+                safetyMessageEl.textContent = message;
+
+                kpiPhEl.textContent = newPH;
+                kpiTurbidityEl.textContent = `${newTurbidity} NTU`;
+                kpiTdsEl.textContent = `${newTDS} ppm`;
+                
+                if (score < 60) {
+                    alertBanner.style.display = 'block';
+                    alertBanner.classList.remove('bg-yellow-500', 'bg-red-500');
+                    if (score < 30) {
+                         alertBanner.classList.add('bg-red-500');
+                         alertMessage.textContent = "CRITICAL ALERT: WATER IS UNSAFE. INITIATE EMERGENCY PROTOCOL.";
+                    } else {
+                         alertBanner.classList.add('bg-yellow-500');
+                         alertMessage.textContent = "WARNING: WATER QUALITY DETERIORATING. ADVISE CAUTION.";
+                    }
+                } else {
+                    alertBanner.style.display = 'none';
+                }
+
+                const now = new Date();
+                const time = `${now.getHours()}:${now.getMinutes()}:${now.getSeconds()}`;
+                
+                timeLabels.push(time);
+                phData.push(newPH);
+                turbidityData.push(newTurbidity);
+                tdsData.push(newTDS);
+
+                if (timeLabels.length > maxDataPoints) {
+                    timeLabels.shift();
+                    phData.shift();
+                    turbidityData.shift();
+                    tdsData.shift();
+                }
+
+                realTimeChart.update();
+            }
+
+            updateDashboard();
+            setInterval(updateDashboard, 5000);
+
+            const analyzeButton = document.getElementById('analyze-button');
+            const riskReportButton = document.getElementById('risk-report-button');
+            const analysisOutput = document.getElementById('analysis-output');
+            const analysisText = document.getElementById('analysis-text');
+            const analysisLoading = document.getElementById('analysis-loading');
+            const analysisListenButton = document.getElementById('analysis-listen');
+
+            async function callAnalysisAPI(prompt, isTrendAnalysis) {
+                if (apiKey === "") {
+                    analysisText.textContent = 'ERROR: API key is missing. Please add your Gemini API key to the code.';
+                    analysisOutput.classList.remove('hidden');
+                    analysisLoading.classList.add('hidden');
+                    return;
+                }
+
+                analysisOutput.classList.add('hidden');
+                analysisLoading.classList.remove('hidden');
+                analysisText.textContent = '';
+                analysisListenButton.style.display = 'none';
+
+                let url = `https://generativelanguage.googleapis.com/v1beta/models/${textModel}:generateContent?key=${apiKey}`;
+                let systemPrompt;
+                if (isTrendAnalysis) {
+                     systemPrompt = "You are a data analyst for a public health initiative. Your task is to analyze real-time water quality data and provide a concise, single-paragraph summary of the key trends and what they might indicate for community health. Focus on changes over time and their potential health impact.";
+                } else {
+                     systemPrompt = "You are a public health risk expert. Given the following water quality data, generate a single-paragraph risk assessment report. State the current status, potential health risks, and a single, direct recommendation for a community health worker. Assume a rural setting with limited resources.";
+                }
+
+                let payload = {
+                    contents: [{ parts: [{ text: prompt }] }],
+                    systemInstruction: {
+                        parts: [{ text: systemPrompt }]
+                    }
+                };
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) throw new Error(`API call failed: ${response.status} ${response.statusText}`);
+                    const result = await response.json();
+                    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) {
+                        analysisText.textContent = text;
+                        analysisOutput.classList.remove('hidden');
+                        analysisListenButton.style.display = 'inline-block';
+                    }
+                } catch (error) {
+                    analysisText.textContent = 'Sorry, a network error occurred while generating the report. Please try again.';
+                    analysisOutput.classList.remove('hidden');
+                    console.error("Gemini API Error:", error);
+                } finally {
+                    analysisLoading.classList.add('hidden');
+                }
+            }
+
+            analyzeButton.addEventListener('click', () => {
+                const trendData = {
+                    ph: phData,
+                    turbidity: turbidityData,
+                    tds: tdsData
+                };
+                const prompt = `Analyze the following water quality trends: pH: ${trendData.ph.join(', ')}. Turbidity: ${trendData.turbidity.join(', ')}. TDS: ${trendData.tds.join(', ')}. Provide a brief analysis of the trend and its potential health impact.`;
+                callAnalysisAPI(prompt, true);
+            });
+
+            riskReportButton.addEventListener('click', () => {
+                const currentData = {
+                    ph: kpiPhEl.textContent,
+                    turbidity: kpiTurbidityEl.textContent,
+                    tds: kpiTdsEl.textContent
+                };
+                const prompt = `Generate a risk assessment report for a community based on the following real-time data. Assume current weather is heavy rainfall, which can increase contamination. pH: ${currentData.ph}. Turbidity: ${currentData.turbidity}. TDS: ${currentData.tds}.`;
+                callAnalysisAPI(prompt, false);
+            });
+            
+            analysisListenButton.addEventListener('click', () => {
+                const textToSpeak = analysisText.textContent;
+                if (textToSpeak.trim() !== '') {
+                    callTTSAPI(textToSpeak);
+                }
+            });
+
+            // New Doctor Portal and Chat Logic
+            const doctorPortalTab = document.querySelector('[data-tab="doctor-portal"]');
+            const doctorPrecautionInput = document.getElementById('doctor-precaution-input');
+            const addPrecautionButton = document.getElementById('add-precaution-button');
+            const precautionsDisplay = document.getElementById('precautions-display');
+            const doctorChatContainer = document.getElementById('doctor-chat-container');
+            const doctorChatInput = document.getElementById('doctor-chat-input');
+            const doctorChatSendButton = document.getElementById('doctor-chat-send');
+
+            let precautions = [];
+            let doctorChatHistory = [{ role: 'user', parts: [{ text: 'Hello, I need some medical advice.' }] }];
+
+            function renderPrecautions() {
+                precautionsDisplay.innerHTML = '';
+                precautions.forEach(p => {
+                    const precautionDiv = document.createElement('div');
+                    precautionDiv.classList.add('p-3', 'rounded-lg', 'bg-teal-100');
+                    precautionDiv.innerHTML = `<p class="text-slate-800">${p.text}</p><p class="mt-1 text-xs text-slate-500 text-right">Posted: ${p.timestamp}</p>`;
+                    precautionsDisplay.prepend(precautionDiv);
+                });
+            }
+
+            addPrecautionButton.addEventListener('click', () => {
+                const text = doctorPrecautionInput.value.trim();
+                if (text) {
+                    const now = new Date();
+                    const timestamp = `${now.toLocaleDateString()} at ${now.toLocaleTimeString()}`;
+                    precautions.push({ text, timestamp });
+                    renderPrecautions();
+                    doctorPrecautionInput.value = '';
+                }
+            });
+
+            function appendDoctorMessage(role, text) {
+                const messageDiv = document.createElement('div');
+                messageDiv.classList.add('mb-2', 'p-2', 'rounded-lg', 'max-w-xs');
+                messageDiv.textContent = text;
+                if (role === 'user') {
+                    messageDiv.classList.add('bg-teal-200', 'self-end', 'text-right');
+                } else {
+                    messageDiv.classList.add('bg-slate-200', 'self-start');
+                }
+                doctorChatContainer.appendChild(messageDiv);
+                doctorChatContainer.scrollTop = doctorChatContainer.scrollHeight;
+            }
+
+            async function sendDoctorChatPrompt(prompt) {
+                if (apiKey === "") {
+                    appendDoctorMessage('model', 'ERROR: API key is missing. Please add your Gemini API key to the code.');
+                    return;
+                }
+                appendDoctorMessage('user', prompt);
+                doctorChatInput.value = '';
+
+                doctorChatHistory.push({ role: "user", parts: [{ text: prompt }] });
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${textModel}:generateContent?key=${apiKey}`;
+                const payload = {
+                    contents: doctorChatHistory,
+                    systemInstruction: {
+                        parts: [{ text: "You are a kind and professional medical advisor for a rural community. Provide clear, concise advice on health concerns. Always recommend consulting a local health worker or doctor for a proper diagnosis." }]
+                    }
+                };
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+                    const result = await response.json();
+                    const text = result?.candidates?.[0]?.content?.parts?.[0]?.text;
+                    if (text) {
+                        appendDoctorMessage('model', text);
+                        doctorChatHistory.push({ role: 'model', parts: [{ text: text }] });
+                    }
+                } catch (error) {
+                    appendDoctorMessage('model', 'Sorry, I am unable to respond right now. Please try again later.');
+                    console.error("Doctor Chat API Error:", error);
+                }
+            }
+
+            doctorChatSendButton.addEventListener('click', () => {
+                const prompt = doctorChatInput.value.trim();
+                if (prompt !== '') {
+                    sendDoctorChatPrompt(prompt);
+                }
+            });
+
+            doctorChatInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter' && doctorChatInput.value.trim() !== '') {
+                    sendDoctorChatPrompt(doctorChatInput.value.trim());
+                }
+            });
+
+            appendDoctorMessage('model', 'Hello. Please ask your health question, and I will do my best to provide a helpful response.');
+
+        });
+    </script>
+</body>
+</html>
